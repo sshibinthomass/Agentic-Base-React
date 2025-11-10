@@ -1,12 +1,15 @@
 import os
 import sys
+import asyncio
 from pathlib import Path
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
+import shutil
+from concurrent.futures import ThreadPoolExecutor
 
 # Add project root to path
 current_file = Path(__file__).resolve()
@@ -112,6 +115,16 @@ async def root():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "chatbot_initialized": chatbot_graph is not None}
+
+
+@app.get("/routes")
+async def list_routes():
+    """List all registered routes"""
+    routes = []
+    for route in app.routes:
+        if hasattr(route, "path") and hasattr(route, "methods"):
+            routes.append({"path": route.path, "methods": list(route.methods)})
+    return {"routes": routes}
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -222,6 +235,61 @@ async def reset_chat(request: ResetChatRequest):
     session_key = f"{session_id}::{use_case}"
     session_store.pop(session_key, None)
     return {"status": "success"}
+
+
+@app.post("/no-expert/process")
+async def process_no_expert(file: UploadFile = File(...)):
+    """
+    Process a PDF file for no_expert usecase.
+    Uploads the file, saves it to backend/data/, and runs the expert identification graph.
+    """
+    try:
+        # Validate file type
+        if not file.filename or not file.filename.endswith(".pdf"):
+            raise HTTPException(status_code=400, detail="Only PDF files are allowed")
+
+        # Create data directory if it doesn't exist
+        data_dir = project_root / "data"
+        data_dir.mkdir(exist_ok=True)
+
+        # Save uploaded file
+        file_path = data_dir / file.filename
+        with open(file_path, "wb") as buffer:
+            content = await file.read()
+            buffer.write(content)
+
+        # Run the expert identification graph in a thread pool to avoid blocking
+        def run_expert_identification():
+            # Create a GraphBuilder instance (model is not used for no_expert usecase)
+            user_controls_input = {
+                "GROQ_API_KEY": os.getenv("GROQ_API_KEY", ""),
+                "selected_llm": "openai/gpt-oss-20b",
+            }
+            llm = GroqLLM(user_controls_input).get_base_llm()
+            graph_builder = GraphBuilder(llm, user_controls_input)
+            # Use GraphBuilder to handle the no_expert usecase
+            result = graph_builder.setup_graph("no_expert", str(file_path))
+            return result
+
+        # Run in thread pool executor to avoid blocking the event loop
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as executor:
+            result = await loop.run_in_executor(executor, run_expert_identification)
+
+        # import json
+        #
+        # json_path = "/Users/qtf4195/Github_Projects/Agentic-Base-React/backend/json_data/expert_search_results_20251110_204528.json"
+        # json_file = Path(json_path)
+        # with open(json_file, "r", encoding="utf-8") as f:
+        #    result = json.load(f)
+
+        # Return the result
+        return {"status": "success", "pdf_path": str(file_path), "result": result}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing PDF: {str(e)}")
 
 
 def main():

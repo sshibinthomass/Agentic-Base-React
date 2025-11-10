@@ -13,6 +13,7 @@ from langgraph_agent.states.chatbotState import (
     ChatbotState,
 )  # ignoring the import error
 from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph
+from langgraph_agent.graphs.expert_graph import ExpertGraphBuilder
 
 dotenv.load_dotenv()
 
@@ -25,18 +26,25 @@ class GraphBuilder:
             ChatbotState
         )  # StateGraph is a class in LangGraph that is used to build the graph
 
-    def setup_graph(self, usecase: str):
+    def setup_graph(self, usecase: str, pdf_path: str = None):
         """
         Sets up the graph for the selected use case.
+
+        Args:
+            usecase: The use case identifier
+            pdf_path: Optional PDF path for no_expert usecase
         """
         if usecase == "basic_chatbot":
             basic_chatbot_build_graph(self.graph_builder, self.llm)
-        elif usecase == "weather_chatbot":
-            basic_chatbot_build_graph(self.graph_builder, self.llm)
+            return self.graph_builder.compile()
+        elif usecase == "no_expert":
+            if not pdf_path:
+                raise ValueError("PDF path is required for no_expert usecase")
+            expert_graph = ExpertGraphBuilder(pdf_path)
+            result = expert_graph.run_expert_identification()
+            return result
         else:
             raise ValueError(f"Unsupported use case: {usecase}")
-
-        return self.graph_builder.compile()
 
 
 if __name__ == "__main__":

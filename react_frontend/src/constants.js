@@ -1,5 +1,6 @@
   export const USE_CASES = [
     { value: "basic_chatbot", label: "Basic Chatbot" },
+    { value: "no_expert", label: "No Expert" },
     { value: "weather_chatbot", label: "Weather Chatbot" },
 ];
 

@@ -3,6 +3,7 @@ import "./App.css";
 import { MODEL_OPTIONS, USE_CASES } from "./constants";
 import { Sidebar } from "./components/Sidebar";
 import { ChatWindow } from "./components/ChatWindow";
+import { NoExpertWindow } from "./components/NoExpertWindow";
 import { escapeHtml, renderMarkdown } from "./utils/markdown";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
@@ -194,17 +195,24 @@ export default function App() {
         />
       )}
 
-      <ChatWindow
-        conversation={conversation}
-        onSubmit={handleSubmitMessage}
-        onClear={resetConversation}
-        loading={loading}
-        resetting={resetting}
-        error={error}
-        useCaseLabel={activeUseCaseLabel}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-      />
+      {useCase === "no_expert" ? (
+        <NoExpertWindow
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        />
+      ) : (
+        <ChatWindow
+          conversation={conversation}
+          onSubmit={handleSubmitMessage}
+          onClear={resetConversation}
+          loading={loading}
+          resetting={resetting}
+          error={error}
+          useCaseLabel={activeUseCaseLabel}
+          sidebarOpen={sidebarOpen}
+          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        />
+      )}
     </div>
   );
 }
