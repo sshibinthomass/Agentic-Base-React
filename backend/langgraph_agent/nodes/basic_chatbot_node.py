@@ -9,7 +9,7 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langgraph_agent.states.state import State
+from langgraph_agent.states.chatbotState import ChatbotState
 from langchain_core.messages import AIMessage
 
 load_dotenv()
@@ -23,7 +23,7 @@ class BasicChatbotNode:
     def __init__(self, model):
         self.llm = model
 
-    def process(self, state: State) -> dict:
+    def process(self, state: ChatbotState) -> dict:
         """
         Processes the input state and generates a chatbot response.
         Returns the AI response as an AIMessage object to maintain conversation history.

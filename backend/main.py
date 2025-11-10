@@ -40,7 +40,7 @@ def initialize_chatbot():
         }
         llm = GroqLLM(user_controls_input)
         llm = llm.get_base_llm()
-        graph_builder = GraphBuilder(llm, user_controls_input, "Hi")
+        graph_builder = GraphBuilder(llm, user_controls_input)
         chatbot_graph = graph_builder.setup_graph("basic_chatbot")
         return True
     except Exception as e:
@@ -165,9 +165,9 @@ async def chat_simple(request: SimpleChatRequest):
 
         # Build a lightweight graph for this request with the chosen LLM
         try:
-            graph = GraphBuilder(
-                llm, {"selected_llm": selected_llm or ""}, "Hi"
-            ).setup_graph(use_case)
+            graph = GraphBuilder(llm, {"selected_llm": selected_llm or ""}).setup_graph(
+                use_case
+            )
         except ValueError as graph_error:
             raise HTTPException(status_code=400, detail=str(graph_error))
 

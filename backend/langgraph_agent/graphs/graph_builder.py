@@ -1,5 +1,4 @@
 from langgraph.graph import StateGraph
-from langgraph.graph import START, END
 
 from pathlib import Path
 import sys
@@ -10,43 +9,30 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langgraph_agent.states.state import State  # ignoring the import error
-from langgraph_agent.nodes.basic_chatbot_node import BasicChatbotNode
+from langgraph_agent.states.chatbotState import (
+    ChatbotState,
+)  # ignoring the import error
+from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph
 
 dotenv.load_dotenv()
 
 
 class GraphBuilder:
-    def __init__(self, model, user_controls_input: dict, message: str):
+    def __init__(self, model, user_controls_input: dict):
         self.llm = model
         self.user_controls_input = user_controls_input
-        self.message = message
-        self.current_llm = user_controls_input["selected_llm"]
         self.graph_builder = StateGraph(
-            State
+            ChatbotState
         )  # StateGraph is a class in LangGraph that is used to build the graph
-
-    def basic_chatbot_build_graph(self):
-        """
-        Builds a basic chatbot graph using LangGraph.
-        This method initializes a chatbot node using the `BasicChatbotNode` class
-        and integrates it into the graph. The chatbot node is set as both the
-        entry and exit point of the graph.
-        """
-        self.basic_chatbot_node = BasicChatbotNode(self.llm)
-
-        self.graph_builder.add_node("chatbot", self.basic_chatbot_node.process)
-        self.graph_builder.add_edge(START, "chatbot")
-        self.graph_builder.add_edge("chatbot", END)
 
     def setup_graph(self, usecase: str):
         """
         Sets up the graph for the selected use case.
         """
         if usecase == "basic_chatbot":
-            self.basic_chatbot_build_graph()
+            basic_chatbot_build_graph(self.graph_builder, self.llm)
         elif usecase == "weather_chatbot":
-            self.basic_chatbot_build_graph()
+            basic_chatbot_build_graph(self.graph_builder, self.llm)
         else:
             raise ValueError(f"Unsupported use case: {usecase}")
 
@@ -64,7 +50,7 @@ if __name__ == "__main__":
     }
     llm = GroqLLM(user_controls_input)
     llm = llm.get_base_llm()
-    graph_builder = GraphBuilder(llm, user_controls_input, "Hi")
+    graph_builder = GraphBuilder(llm, user_controls_input)
     graph = graph_builder.setup_graph("basic_chatbot")
 
     # Create input state for the graph

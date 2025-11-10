@@ -200,7 +200,6 @@ html {
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.5px;
-  text-transform: uppercase;
   box-shadow: 0 8px 18px rgba(220, 38, 38, 0.25);
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }

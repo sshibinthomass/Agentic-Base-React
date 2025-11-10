@@ -3,7 +3,7 @@ from langgraph.graph.message import add_messages
 from typing import Annotated
 
 
-class State(TypedDict):
+class ChatbotState(TypedDict):
     """
     Represent the structure of the state used in graph,
     add_messages is a function that adds messages to the state for history of the conversation
