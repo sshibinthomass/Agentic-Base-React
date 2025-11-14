@@ -13,6 +13,7 @@ from langgraph_agent.states.chatbotState import (
     ChatbotState,
 )  # ignoring the import error
 from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph
+from langgraph_agent.graphs.mcp_chatbot_graph import mcp_chatbot_build_graph
 
 dotenv.load_dotenv()
 
@@ -25,14 +26,18 @@ class GraphBuilder:
             ChatbotState
         )  # StateGraph is a class in LangGraph that is used to build the graph
 
-    def setup_graph(self, usecase: str):
+    async def setup_graph(self, usecase: str, tools=None):
         """
         Sets up the graph for the selected use case.
+
+        Args:
+            usecase: The use case to set up ("basic_chatbot", "mcp_chatbot", etc.)
+            tools: Optional list of tools for MCP chatbot
         """
         if usecase == "basic_chatbot":
             basic_chatbot_build_graph(self.graph_builder, self.llm)
-        elif usecase == "weather_chatbot":
-            basic_chatbot_build_graph(self.graph_builder, self.llm)
+        elif usecase == "mcp_chatbot":
+            mcp_chatbot_build_graph(self.graph_builder, self.llm, tools=tools)
         else:
             raise ValueError(f"Unsupported use case: {usecase}")
 
@@ -40,27 +45,46 @@ class GraphBuilder:
 
 
 if __name__ == "__main__":
-    from langgraph_agent.llms.groq_llm import GroqLLM
+    import asyncio
+    from langgraph_agent.llms.openai_llm import OpenAiLLM
+    from langgraph_agent.nodes.mcp_chatbot_node import load_mcp_tools
     from langchain_core.messages import HumanMessage, SystemMessage
     import os
 
-    user_controls_input = {
-        "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
-        "selected_llm": "openai/gpt-oss-20b",
-    }
-    llm = GroqLLM(user_controls_input)
-    llm = llm.get_base_llm()
-    graph_builder = GraphBuilder(llm, user_controls_input)
-    graph = graph_builder.setup_graph("basic_chatbot")
+    async def main():
+        user_controls_input = {
+            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+            "selected_llm": "gpt-4.1-mini",
+        }
+        llm = OpenAiLLM(user_controls_input)
+        llm = llm.get_base_llm()
 
-    # Create input state for the graph
-    initial_state = {
-        "messages": [
-            SystemMessage(content="You are a helpful assistant."),
-            HumanMessage(content="Hello, how are you?"),
-        ]
-    }
+        graph_builder = GraphBuilder(llm, user_controls_input)
 
-    # Run the graph and print the output
-    result = graph.invoke(initial_state)
-    print("Graph Output:", result)
+        # For MCP chatbot, load tools first
+        tools = await load_mcp_tools()
+        print(f"Tools loaded: {len(tools)}")
+
+        # Setup graph with tools
+        graph = await graph_builder.setup_graph("mcp_chatbot", tools=tools)
+
+        # Create input state for the graph
+        initial_state = {
+            "messages": [
+                SystemMessage(content="You are a helpful assistant."),
+                HumanMessage(
+                    content="Use preplexity to give me today's news in india?"
+                ),
+            ]
+        }
+
+        # Run the graph and print the output (use ainvoke for async graph)
+        result = await graph.ainvoke(initial_state)
+        print("result: ", result)
+        print("Graph Output:", result)
+
+    # Run the async main function
+    import nest_asyncio
+
+    nest_asyncio.apply()
+    asyncio.run(main())

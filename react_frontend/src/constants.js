@@ -1,6 +1,6 @@
   export const USE_CASES = [
     { value: "basic_chatbot", label: "Basic Chatbot" },
-    { value: "weather_chatbot", label: "Weather Chatbot" },
+    { value: "mcp_chatbot", label: "MCP Chatbot" },
 ];
 
 export const MODEL_OPTIONS = {
@@ -11,6 +11,7 @@ export const MODEL_OPTIONS = {
     { value: "llama-3.3-70b-versatile", label: "Llama 3.3 70B Versatile" },
   ],
   openai: [
+    { value: "gpt-4.1-2025-04-14", label: "GPT-4.1 2025-04-14" },
     { value: "gpt-5-nano", label: "GPT-5 Nano" },
     { value: "gpt-4o-mini", label: "GPT-4o Mini" },
     { value: "gpt-5-mini", label: "GPT-5 Mini" },

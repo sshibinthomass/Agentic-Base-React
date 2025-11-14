@@ -26,11 +26,37 @@ load_dotenv()
 
 # Global chatbot graph instance
 chatbot_graph = None
+# Global MCP tools (loaded once at startup)
+mcp_tools = None
 # In-memory session store: (session_id, use_case) -> list of LangChain messages
 session_store: Dict[str, List] = {}
 
 
-def initialize_chatbot():
+async def load_mcp_tools():
+    """
+    Load MCP tools once at startup. This function caches the tools
+    so they're only loaded once and reused for all requests.
+    Returns the list of tools that can be reused.
+    """
+    global mcp_tools
+    if mcp_tools is not None:
+        return mcp_tools  # Return cached tools if already loaded
+
+    try:
+        from langgraph_agent.nodes.mcp_chatbot_node import load_mcp_tools as load_tools
+
+        # Load tools using the function from mcp_chatbot_node
+        tools = await load_tools()
+
+        mcp_tools = tools
+        print(f"MCP tools loaded: {len(mcp_tools)} tools")
+        return mcp_tools
+    except Exception as e:
+        print(f"Error loading MCP tools: {e}")
+        return []
+
+
+async def initialize_chatbot():
     """Initialize the chatbot graph with Groq LLM"""
     global chatbot_graph
     try:
@@ -41,7 +67,7 @@ def initialize_chatbot():
         llm = GroqLLM(user_controls_input)
         llm = llm.get_base_llm()
         graph_builder = GraphBuilder(llm, user_controls_input)
-        chatbot_graph = graph_builder.setup_graph("basic_chatbot")
+        chatbot_graph = await graph_builder.setup_graph("basic_chatbot")
         return True
     except Exception as e:
         print(f"Error initializing chatbot: {e}")
@@ -52,7 +78,10 @@ def initialize_chatbot():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
-    if not initialize_chatbot():
+    # Load MCP tools once at startup
+    await load_mcp_tools()
+
+    if not await initialize_chatbot():
         print(
             "Warning: Failed to initialize chatbot. API will still work but chatbot endpoints may fail."
         )
@@ -165,9 +194,15 @@ async def chat_simple(request: SimpleChatRequest):
 
         # Build a lightweight graph for this request with the chosen LLM
         try:
-            graph = GraphBuilder(llm, {"selected_llm": selected_llm or ""}).setup_graph(
-                use_case
-            )
+            graph_builder = GraphBuilder(llm, {"selected_llm": selected_llm or ""})
+
+            # For MCP chatbot, use pre-loaded tools
+            tools = None
+            if use_case == "mcp_chatbot":
+                # Use globally loaded tools (loaded once at startup)
+                tools = mcp_tools if mcp_tools is not None else await load_mcp_tools()
+
+            graph = await graph_builder.setup_graph(use_case, tools=tools)
         except ValueError as graph_error:
             raise HTTPException(status_code=400, detail=str(graph_error))
 
@@ -186,8 +221,8 @@ async def chat_simple(request: SimpleChatRequest):
         # Create state with all messages for context
         state = {"messages": messages}
         print("state-----", state)
-        # Process with chatbot graph
-        result = graph.invoke(state)
+        # Process with chatbot graph (use ainvoke for async graphs)
+        result = await graph.ainvoke(state)
         # Extract response from graph result
         # The graph returns a state dict with messages, get the last message (should be AI response)
         result_messages = result.get("messages", [])
