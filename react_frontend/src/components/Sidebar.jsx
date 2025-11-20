@@ -58,6 +58,7 @@ export function Sidebar({
             <option value="openai">OpenAI</option>
             <option value="gemini">Gemini</option>
             <option value="ollama">Ollama</option>
+            <option value="anthropic">Anthropic</option>
           </select>
         </label>
 

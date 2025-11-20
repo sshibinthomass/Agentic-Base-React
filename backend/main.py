@@ -19,6 +19,7 @@ from langgraph_agent.llms.groq_llm import GroqLLM
 from langgraph_agent.llms.openai_llm import OpenAiLLM
 from langgraph_agent.llms.gemini_llm import GeminiLLM
 from langgraph_agent.llms.ollama_llm import OllamaLLM
+from langgraph_agent.llms.anthropic_llm import AnthropicLLM
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 # Load environment variables
@@ -187,6 +188,12 @@ async def chat_simple(request: SimpleChatRequest):
                 ),
             }
             llm = OllamaLLM(user_controls_input).get_base_llm()
+        elif provider == "anthropic":
+            user_controls_input = {
+                "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+                "selected_llm": selected_llm or "claude-haiku-4-5-20251001",
+            }
+            llm = AnthropicLLM(user_controls_input).get_base_llm()
         else:
             raise HTTPException(
                 status_code=400, detail=f"Unsupported provider: {provider}"

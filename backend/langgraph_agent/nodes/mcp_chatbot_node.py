@@ -6,8 +6,8 @@ from typing import List, Optional
 from langchain.tools import BaseTool
 from langchain_core.messages import SystemMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_core.tools import StructuredTool
+from langchain_tavily import TavilySearch
+
 from langgraph.prebuilt import ToolNode
 from langchain_core.messages import AIMessage
 
@@ -20,6 +20,7 @@ if str(project_root) not in sys.path:
 from langgraph_agent.states.chatbotState import ChatbotState
 from langgraph_agent.prompts import get_scout_system_prompt
 from langgraph_agent.mcps.config import mcp_config
+from langgraph_agent.tools.custom_tools import get_all_calculation_tools
 
 load_dotenv()
 
@@ -171,21 +172,13 @@ async def load_mcp_tools():
     # Add Tavily search tool if API key is available
     tavily_api_key = os.getenv("TAVILY_API_KEY")
     if tavily_api_key:
-        tools.append(TavilySearchResults(max_results=5, tavily_api_key=tavily_api_key))
+        tools.append(TavilySearch(max_results=5, api_key=tavily_api_key))
 
-    # Convert multiply function to a LangChain tool
-    def multiply(a: int, b: int) -> int:
-        """Multiply a and b.
-
-        Args:
-            a: first int
-            b: second int
-        """
-        return a * b
-
-    multiply_tool = StructuredTool.from_function(multiply)
-    tools.append(multiply_tool)
-
+    # Add all custom calculation tools
+    calculation_tools = get_all_calculation_tools()
+    tools.extend(calculation_tools)
+    for tool in tools:
+        print(tool.name)
     return tools
 
 

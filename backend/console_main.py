@@ -25,6 +25,7 @@ from langgraph_agent.llms.groq_llm import GroqLLM
 from langgraph_agent.llms.openai_llm import OpenAiLLM
 from langgraph_agent.llms.gemini_llm import GeminiLLM
 from langgraph_agent.llms.ollama_llm import OllamaLLM
+from langgraph_agent.llms.anthropic_llm import AnthropicLLM
 from langgraph_agent.nodes.mcp_chatbot_node import load_mcp_tools
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
@@ -81,6 +82,12 @@ def get_llm(provider: str, selected_llm: Optional[str] = None):
             "OLLAMA_BASE_URL": os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
         }
         return OllamaLLM(user_controls_input).get_base_llm()
+    elif provider == "anthropic":
+        user_controls_input = {
+            "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY", ""),
+            "selected_llm": selected_llm or "claude-haiku-4-5-20251001",
+        }
+        return AnthropicLLM(user_controls_input).get_base_llm()
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -211,7 +218,7 @@ async def test_all_providers():
     print("Testing All Providers")
     print("=" * 60)
 
-    providers = ["groq", "openai", "gemini", "ollama"]
+    providers = ["groq", "openai", "gemini", "ollama", "anthropic"]
     test_message = "Say hello in one sentence"
 
     for provider in providers:
@@ -292,8 +299,15 @@ async def main():
             print("2. openai")
             print("3. gemini")
             print("4. ollama")
-            provider_choice = input("Select provider (1-4): ").strip()
-            providers = {"1": "groq", "2": "openai", "3": "gemini", "4": "ollama"}
+            print("5. anthropic")
+            provider_choice = input("Select provider (1-5): ").strip()
+            providers = {
+                "1": "groq",
+                "2": "openai",
+                "3": "gemini",
+                "4": "ollama",
+                "5": "anthropic",
+            }
             if provider_choice in providers:
                 current_provider = providers[provider_choice]
                 print(f"✓ Provider set to: {current_provider}")

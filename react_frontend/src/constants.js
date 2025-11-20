@@ -1,6 +1,6 @@
-  export const USE_CASES = [
-    { value: "basic_chatbot", label: "Basic Chatbot" },
-    { value: "mcp_chatbot", label: "MCP Chatbot" },
+export const USE_CASES = [
+  { value: "basic_chatbot", label: "Basic Chatbot" },
+  { value: "mcp_chatbot", label: "MCP Chatbot" },
 ];
 
 export const MODEL_OPTIONS = {
@@ -25,5 +25,10 @@ export const MODEL_OPTIONS = {
     { value: "gpt-oss:20b", label: "GPT OSS 20B" },
     { value: "deepseek-r1:8b", label: "DeepSeek R1 8B" },
     { value: "llama3.1:latest", label: "Llama 3.1 8B" },
+  ],
+  anthropic: [
+    { value: "claude-haiku-4-5-20251001", label: "Claude 4.5 Haiku" },
+    { value: "claude-3-opus-20240229", label: "Claude 3 Opus" },
+    { value: "claude-3-haiku-20240307", label: "Claude 3 Haiku" },
   ],
 };

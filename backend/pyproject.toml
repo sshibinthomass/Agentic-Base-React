@@ -21,6 +21,8 @@ dependencies = [
     "duckdb>=1.2.2",
     "deepagents>=0.2.7",
     "tavily-python>=0.7.13",
+    "langchain-anthropic>=0.1.1",
+    "langchain-tavily>=0.2.13",
 ]
 
 [dependency-groups]

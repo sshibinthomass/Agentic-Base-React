@@ -9,9 +9,8 @@ same way by specifying the MCP server configuration in my_mcp/mcp_config.json.
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langgraph.graph import StateGraph
 from langchain_core.messages import HumanMessage, AIMessageChunk
-from langchain_core.tools import StructuredTool
 from typing import AsyncGenerator
-from langchain_community.tools.tavily_search import TavilySearchResults
+from langchain_tavily import TavilySearch
 from dotenv import load_dotenv
 import os
 
@@ -26,6 +25,7 @@ if str(project_root) not in sys.path:
 
 from langgraph_agent.mcps.config import mcp_config
 from langgraph_agent.graph import build_agent_graph, AgentState
+from langgraph_agent.tools.custom_tools import get_all_calculation_tools
 
 load_dotenv()
 
@@ -77,15 +77,6 @@ async def main():
     The MultiServerMCPClient allows connection to multiple MCP servers using a single client and config.
     """
 
-    def multiply(a: int, b: int) -> int:
-        """Multiply a and b.
-
-        Args:
-            a: first int
-            b: second int
-        """
-        return a * b
-
     client = MultiServerMCPClient(connections=mcp_config["mcpServers"])
     # the get_tools() method returns a list of tools from all the connected servers
     tools = await client.get_tools()
@@ -93,11 +84,11 @@ async def main():
     # Add Tavily search tool if API key is available
     tavily_api_key = os.getenv("TAVILY_API_KEY")
     if tavily_api_key:
-        tools.append(TavilySearchResults(max_results=5, tavily_api_key=tavily_api_key))
+        tools.append(TavilySearch(max_results=5, api_key=tavily_api_key))
 
-    # Convert multiply function to a LangChain tool
-    multiply_tool = StructuredTool.from_function(multiply)
-    tools.append(multiply_tool)
+    # Add all custom calculation tools
+    calculation_tools = get_all_calculation_tools()
+    tools.extend(calculation_tools)
     print("tools: ", tools)
     graph = build_agent_graph(tools=tools)
 
