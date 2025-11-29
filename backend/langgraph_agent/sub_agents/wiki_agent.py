@@ -7,7 +7,6 @@ from langchain.tools import BaseTool
 from langchain_core.messages import SystemMessage
 
 # from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_tavily import TavilySearch
 
 from langgraph.prebuilt import ToolNode
 
@@ -21,14 +20,13 @@ from configurations import AppConfiguration  # noqa: E402
 from langgraph_agent.states.chatbotState import ChatbotState  # noqa: E402
 from langgraph_agent.prompts import get_scout_system_prompt  # noqa: E402
 from langgraph_agent.mcps.tool_loader import filter_tools_by_name  # noqa: E402
-from langgraph_agent.tools.custom_tools import get_all_calculation_tools  # noqa: E402
 from langgraph_agent.generic.tool_runner import run_llm_tool_loop  # noqa: E402
 
 load_dotenv()
 settings = AppConfiguration()
 
 
-class MCPChatbotNode:
+class WikiSubAgentNode:
     """
     MCP Chatbot node implementation with tool support.
     Supports MCP tools and other LangChain tools similar to graph.py and client.py.
@@ -64,14 +62,8 @@ class MCPChatbotNode:
         """
 
         # Add Tavily search tool if API key is available
-        tavily_api_key = os.getenv("TAVILY_API_KEY")
-        if tavily_api_key:
-            self.tools.append(TavilySearch(max_results=5, api_key=tavily_api_key))
-
         # Add all custom calculation tools
-        calculation_tools = get_all_calculation_tools()
-        self.tools.extend(calculation_tools)
-        required_tool_names = settings.mcps.mcp_chatbot_node_config
+        required_tool_names = settings.mcps.wiki_agent_config
         self.tools = filter_tools_by_name(self.tools, required_tool_names)
 
     async def process(self, state: ChatbotState) -> dict:
@@ -127,11 +119,11 @@ if __name__ == "__main__":
         tools = await load_tools_with_timeout()
         print(f"Tools loaded: {len(tools)}")
 
-        # Create MCPChatbotNode instance with tools
-        node = MCPChatbotNode(llm, tools=tools)
+        # Create WikiSubAgentNode instance with tools
+        node = WikiSubAgentNode(llm, tools=tools)
 
         # Default example
-        user_input = "Can you subtract 67 from 99"
+        user_input = "Who is ms dhoni?"
         print("\n ----  USER  ---- \n\n", user_input)
         print("\n ----  ASSISTANT  ---- \n\n")
 
@@ -139,7 +131,7 @@ if __name__ == "__main__":
         state = {
             "messages": [
                 SystemMessage(
-                    content="You are a helpful and efficient assistant.",
+                    content="You are a helpful and efficient wikipedia assistant.",
                     additional_kwargs={},
                     response_metadata={},
                 ),

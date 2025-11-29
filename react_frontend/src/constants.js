@@ -1,6 +1,7 @@
 export const USE_CASES = [
   { value: "basic_chatbot", label: "Basic Chatbot" },
   { value: "mcp_chatbot", label: "MCP Chatbot" },
+  { value: "sub_agent", label: "Sub Agent" },
 ];
 
 export const MODEL_OPTIONS = {

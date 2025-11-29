@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 import { MODEL_OPTIONS, USE_CASES } from "./constants";
 import { Sidebar } from "./components/Sidebar";
@@ -19,6 +19,66 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [backendStatusMessage, setBackendStatusMessage] = useState("Checking backend...");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const toolStatusEventSourceRef = useRef(null);
+  const [toolStatusStreamKey, setToolStatusStreamKey] = useState(0);
+  const [latestToolCall, setLatestToolCall] = useState(null);
+  const [toolCallHistory, setToolCallHistory] = useState([]);
+  const [toolStatusComplete, setToolStatusComplete] = useState(true);
+
+  const normalizeToolEntry = (entry) => {
+    if (!entry) return null;
+    if (typeof entry === "string") {
+      return {
+        id: null,
+        name: entry,
+        timestamp: "",
+        args: {},
+        response: "",
+        duration_ms: null,
+      };
+    }
+    if (typeof entry !== "object") return null;
+    const name =
+      typeof entry.name === "string"
+        ? entry.name
+        : entry.name !== undefined
+        ? String(entry.name)
+        : "Unknown tool";
+    const timestamp = typeof entry.timestamp === "string" ? entry.timestamp : "";
+    const args =
+      entry.args && typeof entry.args === "object"
+        ? entry.args
+        : {};
+    const response =
+      typeof entry.response === "string"
+        ? entry.response
+        : entry.response !== undefined
+        ? JSON.stringify(entry.response)
+        : "";
+    const duration =
+      typeof entry.duration_ms === "number" ? entry.duration_ms : null;
+    const id =
+      typeof entry.id === "string"
+        ? entry.id
+        : entry.id !== undefined
+        ? String(entry.id)
+        : null;
+    return {
+      id,
+      name,
+      timestamp,
+      args,
+      response,
+      duration_ms: duration,
+    };
+  };
+
+  const normalizeToolEntries = (value) => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((entry) => normalizeToolEntry(entry))
+      .filter((entry) => entry && entry.name);
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -85,9 +145,48 @@ export default function App() {
     setModel(nextModel);
   };
 
+  useEffect(() => {
+    if (!sessionId) return;
+    const params = new URLSearchParams({
+      session_id: sessionId || "default",
+      use_case: useCase,
+    });
+    const eventSource = new EventSource(`${BACKEND_URL}/tool-status/stream?${params.toString()}`);
+    toolStatusEventSourceRef.current = eventSource;
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setLatestToolCall(normalizeToolEntry(data?.latest_tool_call));
+        setToolCallHistory(normalizeToolEntries(data?.tool_calls));
+        setToolStatusComplete(Boolean(data?.completed));
+      } catch (err) {
+        // Ignore malformed events
+      }
+    };
+
+    eventSource.onerror = () => {
+      eventSource.close();
+      if (toolStatusEventSourceRef.current === eventSource) {
+        toolStatusEventSourceRef.current = null;
+      }
+      setTimeout(() => setToolStatusStreamKey((prev) => prev + 1), 1500);
+    };
+
+    return () => {
+      eventSource.close();
+      if (toolStatusEventSourceRef.current === eventSource) {
+        toolStatusEventSourceRef.current = null;
+      }
+    };
+  }, [sessionId, useCase, BACKEND_URL, toolStatusStreamKey]);
+
   const resetConversation = async () => {
     setError("");
     setResetting(true);
+    setLatestToolCall(null);
+    setToolCallHistory([]);
+    setToolStatusComplete(true);
     try {
       const res = await fetch(`${BACKEND_URL}/chat/reset`, {
         method: "POST",
@@ -128,6 +227,9 @@ export default function App() {
     };
     setConversation((prev) => [...prev, userMessage]);
     setLoading(true);
+    setLatestToolCall(null);
+    setToolCallHistory([]);
+    setToolStatusComplete(false);
 
     try {
       const response = await fetch(`${BACKEND_URL}/chat`, {
@@ -160,6 +262,13 @@ export default function App() {
         ...prev,
         { text: botText, rendered, isUser: false },
       ]);
+      const normalizedCalls = normalizeToolEntries(payload?.tool_calls);
+      setToolCallHistory(normalizedCalls);
+      const latest =
+        normalizeToolEntry(payload?.latest_tool_call) ??
+        (normalizedCalls.length ? normalizedCalls[normalizedCalls.length - 1] : null);
+      setLatestToolCall(latest);
+      setToolStatusComplete(true);
     } catch (err) {
       let message = err.message || "Something went wrong";
       if (message.includes("Chatbot not initialized")) {
@@ -167,6 +276,9 @@ export default function App() {
           "Chatbot service is not ready yet. Please ensure the backend is running with a valid GROQ_API_KEY.";
       }
       setError(message);
+      setToolStatusComplete(true);
+      setLatestToolCall(null);
+      setToolCallHistory([]);
     } finally {
       setLoading(false);
     }
@@ -204,6 +316,9 @@ export default function App() {
         useCaseLabel={activeUseCaseLabel}
         sidebarOpen={sidebarOpen}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        latestToolCall={latestToolCall}
+        toolCallHistory={toolCallHistory}
+        toolStatusComplete={toolStatusComplete}
       />
     </div>
   );

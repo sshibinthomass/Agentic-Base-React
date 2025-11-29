@@ -10,3 +10,5 @@ class ChatbotState(TypedDict):
     """
 
     messages: Annotated[List, add_messages]
+    tool_calls: List
+    session_key: str

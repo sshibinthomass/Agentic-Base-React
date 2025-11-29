@@ -10,10 +10,10 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langgraph_agent.nodes.mcp_chatbot_node import MCPChatbotNode # noqa: E402
+from langgraph_agent.sub_agents.wiki_agent import WikiSubAgentNode  # noqa: E402
 
 
-def mcp_chatbot_build_graph(graph_builder, llm, tools: Optional[List[BaseTool]] = None):
+def agent_build_graph(graph_builder, llm, tools: Optional[List[BaseTool]] = None):
     """
     Builds an MCP chatbot graph using LangGraph.
     This method initializes a chatbot node using the `MCPChatbotNode` class
@@ -25,12 +25,12 @@ def mcp_chatbot_build_graph(graph_builder, llm, tools: Optional[List[BaseTool]] 
         llm: The language model to use for the chatbot
         tools: Optional list of tools to bind to the LLM (from MCP servers, Tavily, etc.)
     """
-    mcp_chatbot_node = MCPChatbotNode(llm, tools=tools)
+    wiki_sub_agent_node = WikiSubAgentNode(llm, tools=tools)
 
     # LangGraph can handle async nodes, so we can add the async process method directly
-    graph_builder.add_node("mcp_chatbot", mcp_chatbot_node.process)
-    graph_builder.add_edge(START, "mcp_chatbot")
-    graph_builder.add_edge("mcp_chatbot", END)
+    graph_builder.add_node("wiki_sub_agent", wiki_sub_agent_node.process)
+    graph_builder.add_edge(START, "wiki_sub_agent")
+    graph_builder.add_edge("wiki_sub_agent", END)
 
 
 if __name__ == "__main__":
@@ -62,7 +62,7 @@ if __name__ == "__main__":
         graph_builder = StateGraph(ChatbotState)
 
         # Build the graph with MCP tools
-        mcp_chatbot_build_graph(graph_builder, llm, tools=tools)
+        agent_build_graph(graph_builder, llm, tools=tools)
 
         # Compile the graph
         graph = graph_builder.compile()
@@ -71,7 +71,7 @@ if __name__ == "__main__":
         initial_state = {
             "messages": [
                 SystemMessage(content="You are a helpful and efficient assistant."),
-                HumanMessage(content="Use multiply tool to multiply 2 and 3"),
+                HumanMessage(content="Who is MS Dhoni?"),
             ]
         }
 

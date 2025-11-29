@@ -9,11 +9,10 @@ project_root = current_file.parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langgraph_agent.states.chatbotState import (
-    ChatbotState,
-)  # ignoring the import error
-from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph
-from langgraph_agent.graphs.mcp_chatbot_graph import mcp_chatbot_build_graph
+from langgraph_agent.states.chatbotState import ChatbotState # noqa: E402
+from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph  # noqa: E402
+from langgraph_agent.graphs.mcp_chatbot_graph import mcp_chatbot_build_graph  # noqa: E402
+from langgraph_agent.graphs.sub_agent_graph import agent_build_graph  # noqa: E402
 
 dotenv.load_dotenv()
 
@@ -38,6 +37,8 @@ class GraphBuilder:
             basic_chatbot_build_graph(self.graph_builder, self.llm)
         elif usecase == "mcp_chatbot":
             mcp_chatbot_build_graph(self.graph_builder, self.llm, tools=tools)
+        elif usecase == "sub_agent":
+            agent_build_graph(self.graph_builder, self.llm, tools=tools)
         else:
             raise ValueError(f"Unsupported use case: {usecase}")
 

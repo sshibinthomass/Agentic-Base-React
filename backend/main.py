@@ -1,11 +1,13 @@
+import json
 import os
 import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Dict, List, Optional
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from typing import Any, Dict, List, Optional
 from dotenv import load_dotenv
 
 # Add project root to path
@@ -14,13 +16,21 @@ project_root = current_file.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from langgraph_agent.graphs.graph_builder import GraphBuilder
-from langgraph_agent.llms.groq_llm import GroqLLM
-from langgraph_agent.llms.openai_llm import OpenAiLLM
-from langgraph_agent.llms.gemini_llm import GeminiLLM
-from langgraph_agent.llms.ollama_llm import OllamaLLM
-from langgraph_agent.llms.anthropic_llm import AnthropicLLM
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langgraph_agent.graphs.graph_builder import GraphBuilder  # noqa: E402
+from langgraph_agent.llms.groq_llm import GroqLLM  # noqa: E402
+from langgraph_agent.llms.openai_llm import OpenAiLLM  # noqa: E402
+from langgraph_agent.llms.gemini_llm import GeminiLLM  # noqa: E402
+from langgraph_agent.llms.ollama_llm import OllamaLLM  # noqa: E402
+from langgraph_agent.llms.anthropic_llm import AnthropicLLM  # noqa: E402
+from langchain_core.messages import HumanMessage, SystemMessage, AIMessage  # noqa: E402
+from langgraph_agent.mcps.tool_loader import load_tools_with_timeout  # noqa: E402
+from langgraph_agent.generic import (  # noqa: E402
+    reset_tool_status,
+    finalize_tool_status,
+    get_tool_status,
+    clear_tool_status,
+    tool_status_stream,
+)
 
 # Load environment variables
 load_dotenv()
@@ -44,13 +54,12 @@ async def load_mcp_tools():
         return mcp_tools  # Return cached tools if already loaded
 
     try:
-        from langgraph_agent.nodes.mcp_chatbot_node import load_mcp_tools as load_tools
-
         # Load tools using the function from mcp_chatbot_node
-        tools = await load_tools()
+        tools = await load_tools_with_timeout()
 
         mcp_tools = tools
         print(f"MCP tools loaded: {len(mcp_tools)} tools")
+
         return mcp_tools
     except Exception as e:
         print(f"Error loading MCP tools: {e}")
@@ -116,9 +125,26 @@ app.add_middleware(
 )
 
 
+class ToolCall(BaseModel):
+    id: Optional[str] = None
+    name: str
+    timestamp: str
+    args: Dict[str, Any] = Field(default_factory=dict)
+    response: str = ""
+    duration_ms: Optional[float] = None
+
+
 class ChatResponse(BaseModel):
     response: str
     status: str = "success"
+    latest_tool_call: Optional[ToolCall] = None
+    tool_calls: List[ToolCall] = Field(default_factory=list)
+
+
+class ToolStatusResponse(BaseModel):
+    latest_tool_call: Optional[ToolCall] = None
+    tool_calls: List[ToolCall] = Field(default_factory=list)
+    completed: bool = True
 
 
 class SimpleChatRequest(BaseModel):
@@ -146,6 +172,34 @@ async def health_check():
     return {"status": "healthy", "chatbot_initialized": chatbot_graph is not None}
 
 
+@app.get("/tool-status", response_model=ToolStatusResponse)
+async def read_tool_status(
+    session_id: Optional[str] = "default",
+    use_case: Optional[str] = "basic_chatbot",
+):
+    session_key = f"{session_id or 'default'}::{use_case or 'basic_chatbot'}"
+    status = get_tool_status(session_key)
+    return ToolStatusResponse(
+        latest_tool_call=status.get("latest_tool_call"),
+        tool_calls=status.get("tool_calls", []),
+        completed=status.get("completed", True),
+    )
+
+
+@app.get("/tool-status/stream")
+async def stream_tool_status(
+    session_id: Optional[str] = "default",
+    use_case: Optional[str] = "basic_chatbot",
+):
+    session_key = f"{session_id or 'default'}::{use_case or 'basic_chatbot'}"
+
+    async def event_generator():
+        async for status in tool_status_stream(session_key):
+            yield f"data: {json.dumps(status)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_simple(request: SimpleChatRequest):
     """
@@ -159,7 +213,6 @@ async def chat_simple(request: SimpleChatRequest):
 
     try:
         # Choose LLM based on provider/model from request
-        print("request-----", request)
         provider = (request.provider or "groq").lower()
         selected_llm = request.selected_llm
         if provider == "groq":
@@ -220,6 +273,7 @@ async def chat_simple(request: SimpleChatRequest):
         session_key = f"{session_id}::{use_case}"
         if session_key not in session_store:
             session_store[session_key] = []
+        reset_tool_status(session_key)
 
         # Build messages from stored history and current input
         messages = [SystemMessage(content="You are a helpful and efficient assistant.")]
@@ -228,8 +282,11 @@ async def chat_simple(request: SimpleChatRequest):
         messages.append(user_msg)
 
         # Create state with all messages for context
-        state = {"messages": messages}
-        print("state-----", state)
+        state = {
+            "messages": messages,
+            "tool_calls": [],
+            "session_key": session_key,
+        }
         # Process with chatbot graph (use ainvoke for async graphs)
         result = await graph.ainvoke(state)
         # Extract response from graph result
@@ -251,9 +308,22 @@ async def chat_simple(request: SimpleChatRequest):
         session_store[session_key].append(user_msg)
         session_store[session_key].append(AIMessage(content=response_text))
 
-        return ChatResponse(response=response_text, status="success")
+        result_tool_calls = result.get("tool_calls", []) or []
+        latest_tool_call = result_tool_calls[-1] if result_tool_calls else None
+        finalize_tool_status(session_key, result_tool_calls)
+
+        return ChatResponse(
+            response=response_text,
+            status="success",
+            latest_tool_call=latest_tool_call,
+            tool_calls=result_tool_calls,
+        )
 
     except Exception as e:
+        session_id = request.session_id or "default"
+        use_case = request.use_case or "basic_chatbot"
+        session_key = f"{session_id}::{use_case}"
+        finalize_tool_status(session_key, [])
         raise HTTPException(
             status_code=500, detail=f"Error processing chat request: {str(e)}"
         )
@@ -265,6 +335,7 @@ async def reset_chat(request: ResetChatRequest):
     use_case = request.use_case or "basic_chatbot"
     session_key = f"{session_id}::{use_case}"
     session_store.pop(session_key, None)
+    clear_tool_status(session_key)
     return {"status": "success"}
 
 
