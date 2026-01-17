@@ -163,22 +163,157 @@ async def load_mcp_tools():
     Load MCP tools. This function sets up MCP client,
     gets tools from MCP servers, and adds Tavily and custom tools.
     Returns the list of tools.
+    
+    This function loads tools from each server individually to handle
+    failures gracefully - if one server fails, others can still load.
     """
-    # Set up MCP client and get tools (same as client.py)
-    client = MultiServerMCPClient(connections=mcp_config["mcpServers"])
-    # the get_tools() method returns a list of tools from all the connected servers
-    tools = await client.get_tools()
+    tools = []
+    successful_servers = []
+    failed_servers = []
+    
+    # Load tools from each server individually to handle failures gracefully
+    print(f"\nLoading MCP tools from {len(mcp_config['mcpServers'])} server(s)...")
+    
+    for server_name, server_config in mcp_config["mcpServers"].items():
+        try:
+            print(f"  Attempting to load tools from '{server_name}'...", end=" ", flush=True)
+            
+            # Check if transport is supported (only stdio is supported)
+            transport = server_config.get("transport", "stdio")
+            if transport != "stdio":
+                raise ValueError(f"Unsupported transport: {transport}. Only 'stdio' transport is supported by langchain_mcp_adapters.")
+            
+            # Create a client for just this server
+            single_server_config = {server_name: server_config}
+            client = MultiServerMCPClient(connections=single_server_config)
+            
+            # Get tools from this server
+            server_tools = await client.get_tools()
+            
+            if server_tools:
+                tools.extend(server_tools)
+                successful_servers.append(server_name)
+                print(f"✓ ({len(server_tools)} tools)")
+            else:
+                print(f"⚠ (no tools)")
+                successful_servers.append(server_name)
+                
+        except Exception as e:
+            import traceback
+            error_msg = str(e)
+            error_type = type(e).__name__
+            
+            # Extract more detailed error information
+            detailed_error = error_msg
+            if hasattr(e, '__cause__') and e.__cause__:
+                detailed_error = f"{error_msg} (caused by: {str(e.__cause__)})"
+            
+            # Check for nested exceptions in ExceptionGroup
+            if "ExceptionGroup" in error_type or "TaskGroup" in error_msg:
+                # Try to extract the actual underlying error
+                tb_str = traceback.format_exc()
+                if "McpError" in tb_str:
+                    if "Connection closed" in tb_str:
+                        detailed_error = "Connection closed - server process may have crashed or failed to start"
+                    elif "timeout" in tb_str.lower():
+                        detailed_error = "Connection timeout - server took too long to respond"
+                    else:
+                        # Extract the McpError message
+                        lines = tb_str.split('\n')
+                        for line in lines:
+                            if "McpError" in line or "mcp.shared.exceptions" in line:
+                                detailed_error = line.strip()
+                                break
+                elif "FileNotFoundError" in tb_str or "command not found" in tb_str.lower():
+                    detailed_error = "Command not found - check if required tools (docker/npx/uvx) are installed and in PATH"
+                elif "docker" in server_config.get("command", "").lower():
+                    if "Cannot connect to the Docker daemon" in tb_str:
+                        detailed_error = "Docker daemon not running - start Docker Desktop"
+                    elif "pull access denied" in tb_str.lower() or "repository does not exist" in tb_str.lower():
+                        detailed_error = "Docker image not found or access denied - check image name and permissions"
+                    else:
+                        detailed_error = "Docker error - check Docker is running and image exists"
+            
+            failed_servers.append((server_name, detailed_error))
+            
+            # Provide helpful error messages
+            if "Unsupported transport" in detailed_error:
+                print(f"✗ (unsupported transport - only stdio is supported)")
+            elif "Connection closed" in detailed_error or "McpError" in error_type:
+                print(f"✗ (connection failed)")
+            elif "not found" in detailed_error.lower() or "command" in detailed_error.lower():
+                print(f"✗ (command/tool not found)")
+            elif "docker" in detailed_error.lower() and "daemon" in detailed_error.lower():
+                print(f"✗ (Docker not running)")
+            elif "docker" in detailed_error.lower():
+                print(f"✗ (Docker error)")
+            elif "timeout" in detailed_error.lower():
+                print(f"✗ (timeout)")
+            else:
+                print(f"✗ (error: {detailed_error[:40]}...)")
+    
+    # Summary
+    if successful_servers:
+        print(f"\n✓ Successfully loaded tools from {len(successful_servers)} server(s): {', '.join(successful_servers)}")
+        print(f"  Total MCP tools loaded: {len(tools)}")
+    
+    if failed_servers:
+        print(f"\n⚠ Failed to load tools from {len(failed_servers)} server(s):")
+        for server_name, error_msg in failed_servers:
+            print(f"  - {server_name}: {error_msg[:100]}")
+        
+        # Provide specific troubleshooting for common servers
+        print(f"\n📋 Troubleshooting tips:")
+        for server_name, error_msg in failed_servers:
+            server_config = mcp_config["mcpServers"].get(server_name, {})
+            command = server_config.get("command", "")
+            
+            if server_name == "github":
+                print(f"  • {server_name}:")
+                print(f"    - Requires Docker to be running (check: docker ps)")
+                print(f"    - Requires MCP_GITHUB_PAT environment variable")
+                print(f"    - May need to pull image: docker pull ghcr.io/github/github-mcp-server")
+                print(f"    - Check Docker Desktop is running on Windows")
+            elif server_name == "arxiv-mcp-server-gpt":
+                print(f"  • {server_name}:")
+                print(f"    - Requires Node.js and npx (check: npx --version)")
+                print(f"    - Uses @smithery/cli service which may be down or have network issues")
+                print(f"    - The API key/profile may be invalid or expired")
+                print(f"    - Try running manually: npx -y @smithery/cli@latest run @lecigarevolant/arxiv-mcp-server-gpt --key <key> --profile <profile>")
+            elif "docker" in command.lower():
+                print(f"  • {server_name}:")
+                print(f"    - Requires Docker to be running")
+                print(f"    - Check: docker ps (should not error)")
+                print(f"    - May need to pull Docker image")
+            elif "npx" in command.lower():
+                print(f"  • {server_name}:")
+                print(f"    - Requires Node.js and npx")
+                print(f"    - Check: npx --version")
+                print(f"    - May have network issues downloading package")
+            elif "uvx" in command.lower():
+                print(f"  • {server_name}:")
+                print(f"    - Requires uv to be installed")
+                print(f"    - Check: uvx --version")
+        
+        print(f"\n  Continuing with available tools from other servers.")
 
     # Add Tavily search tool if API key is available
     tavily_api_key = os.getenv("TAVILY_API_KEY")
     if tavily_api_key:
         tools.append(TavilySearch(max_results=5, api_key=tavily_api_key))
+        print(f"✓ Added Tavily search tool")
 
     # Add all custom calculation tools
     calculation_tools = get_all_calculation_tools()
     tools.extend(calculation_tools)
-    for tool in tools:
-        print(tool.name)
+    print(f"✓ Added {len(calculation_tools)} custom calculation tools")
+    
+    print(f"\nTotal tools available: {len(tools)}")
+    if tools:
+        print("Tool names:")
+        for tool in tools:
+            print(f"  - {tool.name}")
+    
     return tools
 
 
