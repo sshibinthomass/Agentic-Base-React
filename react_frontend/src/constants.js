@@ -1,6 +1,7 @@
 export const USE_CASES = [
   { value: "basic_chatbot", label: "Basic Chatbot" },
   { value: "mcp_chatbot", label: "MCP Chatbot" },
+  { value: "long_memory_chatbot", label: "Long Memory" },
 ];
 
 export const MODEL_OPTIONS = {

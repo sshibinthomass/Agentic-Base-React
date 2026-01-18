@@ -14,6 +14,9 @@ from langgraph_agent.states.chatbotState import (
 )  # ignoring the import error
 from langgraph_agent.graphs.basic_chatbot_graph import basic_chatbot_build_graph
 from langgraph_agent.graphs.mcp_chatbot_graph import mcp_chatbot_build_graph
+from langgraph_agent.graphs.long_memory_chatbot_graph import long_memory_chatbot_build_graph
+from langgraph.store.base import BaseStore
+from typing import Optional
 
 dotenv.load_dotenv()
 
@@ -26,22 +29,30 @@ class GraphBuilder:
             ChatbotState
         )  # StateGraph is a class in LangGraph that is used to build the graph
 
-    async def setup_graph(self, usecase: str, tools=None):
+    async def setup_graph(self, usecase: str, tools=None, store: Optional[BaseStore] = None, session_id: str = "default"):
         """
         Sets up the graph for the selected use case.
 
         Args:
-            usecase: The use case to set up ("basic_chatbot", "mcp_chatbot", etc.)
+            usecase: The use case to set up ("basic_chatbot", "mcp_chatbot", "long_memory_chatbot", etc.)
             tools: Optional list of tools for MCP chatbot
+            store: Optional BaseStore instance for long memory chatbot
+            session_id: Session ID for long memory chatbot namespacing
         """
         if usecase == "basic_chatbot":
             basic_chatbot_build_graph(self.graph_builder, self.llm)
         elif usecase == "mcp_chatbot":
             mcp_chatbot_build_graph(self.graph_builder, self.llm, tools=tools)
+        elif usecase == "long_memory_chatbot":
+            long_memory_chatbot_build_graph(self.graph_builder, self.llm, store=store, session_id=session_id)
         else:
             raise ValueError(f"Unsupported use case: {usecase}")
 
-        return self.graph_builder.compile()
+        # Compile graph with store if provided (for long memory)
+        if store is not None:
+            return self.graph_builder.compile(checkpointer=None, store=store)
+        else:
+            return self.graph_builder.compile()
 
 
 if __name__ == "__main__":

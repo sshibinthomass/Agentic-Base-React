@@ -19,6 +19,36 @@ export default function App() {
   const [backendStatus, setBackendStatus] = useState("checking");
   const [backendStatusMessage, setBackendStatusMessage] = useState("Checking backend...");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sessions, setSessions] = useState([]);
+
+  const loadSessions = async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/sessions?use_case=${useCase}`);
+      if (response.ok) {
+        const data = await response.json();
+        let sessionList = data.sessions || [];
+        // Ensure current session is in the list
+        const currentSessionExists = sessionList.some(
+          (s) => s.session_id === sessionId
+        );
+        if (!currentSessionExists && sessionId) {
+          sessionList = [
+            ...sessionList,
+            { session_id: sessionId, use_case: useCase, message_count: 0 },
+          ];
+        }
+        setSessions(sessionList);
+      }
+    } catch (err) {
+      console.error("Failed to load sessions:", err);
+      // If backend is down, at least show current session
+      if (sessionId) {
+        setSessions([
+          { session_id: sessionId, use_case: useCase, message_count: 0 },
+        ]);
+      }
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -34,6 +64,35 @@ export default function App() {
       setSessionId(id);
     }
   }, []);
+
+  useEffect(() => {
+    // Load sessions from backend when sessionId or useCase changes
+    if (sessionId) {
+      loadSessions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useCase, sessionId]);
+
+  const handleCreateSession = () => {
+    const newId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `session-${Date.now()}`;
+    localStorage.setItem("chat_session_id", newId);
+    setSessionId(newId);
+    setConversation([]);
+    // Add to sessions list
+    setSessions((prev) => [
+      ...prev,
+      { session_id: newId, use_case: useCase, message_count: 0 },
+    ]);
+  };
+
+  const handleSessionChange = (newSessionId) => {
+    localStorage.setItem("chat_session_id", newSessionId);
+    setSessionId(newSessionId);
+    setConversation([]); // Clear conversation when switching sessions
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -160,6 +219,8 @@ export default function App() {
         ...prev,
         { text: botText, rendered, isUser: false },
       ]);
+      // Refresh sessions after sending a message
+      loadSessions();
     } catch (err) {
       let message = err.message || "Something went wrong";
       if (message.includes("Chatbot not initialized")) {
@@ -185,9 +246,14 @@ export default function App() {
           models={availableModels}
           useCase={useCase}
           useCases={USE_CASES}
+          sessionId={sessionId}
+          sessions={sessions}
           onProviderChange={handleProviderChange}
           onModelChange={handleModelChange}
           onUseCaseChange={handleUseCaseChange}
+          onSessionChange={handleSessionChange}
+          onCreateSession={handleCreateSession}
+          onRefreshSessions={loadSessions}
           backendUrl={BACKEND_URL}
           backendStatus={backendStatus}
           backendStatusMessage={backendStatusMessage}

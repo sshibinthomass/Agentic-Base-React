@@ -21,6 +21,8 @@ from langgraph_agent.llms.gemini_llm import GeminiLLM
 from langgraph_agent.llms.ollama_llm import OllamaLLM
 from langgraph_agent.llms.anthropic_llm import AnthropicLLM
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from langgraph.store.memory import InMemoryStore
+from langgraph_agent.stores.persistent_store import create_persistent_store
 
 # Load environment variables
 load_dotenv()
@@ -31,6 +33,9 @@ chatbot_graph = None
 mcp_tools = None
 # In-memory session store: (session_id, use_case) -> list of LangChain messages
 session_store: Dict[str, List] = {}
+# Global store for long memory (can be per-session or shared)
+# Using a shared persistent store with namespacing per session
+long_memory_store = None
 
 
 async def load_mcp_tools():
@@ -201,6 +206,14 @@ async def chat_simple(request: SimpleChatRequest):
 
         use_case = request.use_case or "basic_chatbot"
 
+        # Resolve session ID early (needed for long memory)
+        session_id = request.session_id or "default"
+        
+        # Log session information for debugging
+        if use_case == "long_memory_chatbot":
+            print(f"\n[LONG MEMORY] Session ID: {session_id}")
+            print(f"[LONG MEMORY] Namespace: ('memories', '{session_id}')")
+
         # Build a lightweight graph for this request with the chosen LLM
         try:
             graph_builder = GraphBuilder(llm, {"selected_llm": selected_llm or ""})
@@ -211,12 +224,33 @@ async def chat_simple(request: SimpleChatRequest):
                 # Use globally loaded tools (loaded once at startup)
                 tools = mcp_tools if mcp_tools is not None else await load_mcp_tools()
 
-            graph = await graph_builder.setup_graph(use_case, tools=tools)
+            # For long memory chatbot, create/use persistent store
+            store = None
+            if use_case == "long_memory_chatbot":
+                global long_memory_store
+                # Create persistent store if not exists (shared store with session namespacing)
+                if long_memory_store is None:
+                    embed_model = os.getenv("LANGMEM_EMBED_MODEL", "openai:text-embedding-3-small")
+                    db_path = os.getenv("LANGMEM_DB_PATH", None)  # Optional custom DB path
+                    long_memory_store = create_persistent_store(
+                        db_path=db_path,
+                        embed_model=embed_model
+                    )
+                    # Initialize the store (loads existing data from DB)
+                    await long_memory_store.setup()
+                    print(f"[LONG MEMORY] Store initialized and loaded from database")
+                store = long_memory_store
+
+            graph = await graph_builder.setup_graph(
+                use_case, 
+                tools=tools, 
+                store=store, 
+                session_id=session_id
+            )
         except ValueError as graph_error:
             raise HTTPException(status_code=400, detail=str(graph_error))
 
-        # Resolve session and initialize store if needed
-        session_id = request.session_id or "default"
+        # Initialize session store if needed (for conversation history)
         session_key = f"{session_id}::{use_case}"
         if session_key not in session_store:
             session_store[session_key] = []
@@ -266,6 +300,49 @@ async def reset_chat(request: ResetChatRequest):
     session_key = f"{session_id}::{use_case}"
     session_store.pop(session_key, None)
     return {"status": "success"}
+
+
+@app.get("/sessions")
+async def list_sessions(use_case: Optional[str] = None):
+    """
+    List all available sessions.
+    If use_case is provided, only return sessions for that use case.
+    """
+    sessions = []
+    for session_key in session_store.keys():
+        parts = session_key.split("::")
+        if len(parts) == 2:
+            sess_id, sess_use_case = parts
+            if use_case is None or sess_use_case == use_case:
+                message_count = len(session_store[session_key])
+                sessions.append({
+                    "session_id": sess_id,
+                    "use_case": sess_use_case,
+                    "message_count": message_count,
+                    "last_activity": "recent"  # Could be enhanced with timestamps
+                })
+    return {"sessions": sessions}
+
+
+@app.get("/sessions/{session_id}")
+async def get_session_info(session_id: str, use_case: Optional[str] = None):
+    """
+    Get information about a specific session.
+    """
+    sessions = []
+    for session_key in session_store.keys():
+        parts = session_key.split("::")
+        if len(parts) == 2:
+            sess_id, sess_use_case = parts
+            if sess_id == session_id and (use_case is None or sess_use_case == use_case):
+                message_count = len(session_store[session_key])
+                sessions.append({
+                    "session_id": sess_id,
+                    "use_case": sess_use_case,
+                    "message_count": message_count,
+                    "last_activity": "recent"
+                })
+    return {"sessions": sessions}
 
 
 def main():
