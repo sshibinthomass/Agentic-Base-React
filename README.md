@@ -105,6 +105,42 @@ npm run dev
 
 The frontend will be available at `http://localhost:5173`
 
+### Filesystem MCP Server
+
+This project uses a filesystem MCP server (provided by `@modelcontextprotocol/server-filesystem`) to expose a local directory to the MCP client.
+
+- Prerequisites: Node.js 18+ and `npm`/`npx` available.
+- Configure the directory to expose in the backend `.env` file (example in `backend/example.env`):
+
+```
+MCP_FILESYSTEM_DIR=./workspace
+```
+
+- Run on-demand with `npx` (no install required):
+
+```bash
+# from the project root or `backend/`
+npx -y @modelcontextprotocol/server-filesystem ./backend/workspace
+```
+
+- Install globally (optional) if you prefer the binary to be available system-wide:
+
+```bash
+npm install --location=global @modelcontextprotocol/server-filesystem
+# or
+npm install -g @modelcontextprotocol/server-filesystem
+```
+
+- The backend's MCP client will also spawn this command automatically using the configuration in `backend/langgraph_agent/mcps/mcp_config.json`. If the filesystem tool fails to load, check:
+  - that `MCP_FILESYSTEM_DIR` points to an existing, writable directory (create `backend/workspace` if needed),
+  - `node -v` and `npx -v` output, and
+  - backend logs when starting the server (`python -m uvicorn main:app --reload` from `backend/`).
+
+Troubleshooting tips:
+- If you see `ENOENT` related to the workspace path, create the folder: `mkdir backend\workspace`.
+- To run the filesystem server persistently, run the global binary (if installed) or use a process manager (for example, `pm2` or a background PowerShell job).
+
+
 ## Project Structure
 
 ```

@@ -8,14 +8,10 @@ class GroqLLM:
     def __init__(self, user_contols_input):
         self.user_controls_input = user_contols_input
         self.store = {}
-        self.session_id = "default_session"  # Default session ID
 
-    def clear_chat_history(self, session_id: str = None):
-        """Clear chat history for a session."""
-        if session_id is None:
-            session_id = self.session_id
-        if session_id in self.store:
-            self.store[session_id] = ChatMessageHistory()
+    def clear_chat_history(self):
+        """Clear chat history."""
+        self.store.clear()
 
 
     def get_base_llm(self):

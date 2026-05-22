@@ -3,7 +3,6 @@ Console-based test script for testing all features from main.py
 This script allows interactive testing of:
 - Different LLM providers (groq, openai, gemini, ollama)
 - Different use cases (basic_chatbot, mcp_chatbot)
-- Session management
 - Tool loading and usage
 """
 
@@ -34,8 +33,8 @@ load_dotenv()
 
 # Global MCP tools (loaded once at startup)
 mcp_tools = None
-# In-memory session store: (session_id, use_case) -> list of LangChain messages
-session_store: Dict[str, List] = {}
+# In-memory conversation store keyed by use case
+conversation_store: Dict[str, List] = {}
 
 
 async def load_mcp_tools_global():
@@ -96,7 +95,6 @@ async def chat(
     message: str,
     provider: str = "groq",
     use_case: str = "basic_chatbot",
-    session_id: str = "default",
     selected_llm: Optional[str] = None,
 ):
     """Process a chat message (replicates main.py chat endpoint logic)"""
@@ -116,14 +114,13 @@ async def chat(
 
         graph = await graph_builder.setup_graph(use_case, tools=tools)
 
-        # Resolve session and initialize store if needed
-        session_key = f"{session_id}::{use_case}"
-        if session_key not in session_store:
-            session_store[session_key] = []
+        # Initialize conversation store if needed
+        if use_case not in conversation_store:
+            conversation_store[use_case] = []
 
         # Build messages from stored history and current input
         messages = [SystemMessage(content="You are a helpful and efficient assistant.")]
-        messages.extend(session_store[session_key])
+        messages.extend(conversation_store[use_case])
         user_msg = HumanMessage(content=message)
         messages.append(user_msg)
 
@@ -146,9 +143,9 @@ async def chat(
         else:
             response_text = "No response generated"
 
-        # Persist history for this session
-        session_store[session_key].append(user_msg)
-        session_store[session_key].append(AIMessage(content=response_text))
+        # Persist history for this conversation
+        conversation_store[use_case].append(user_msg)
+        conversation_store[use_case].append(AIMessage(content=response_text))
 
         return response_text
 
@@ -156,11 +153,10 @@ async def chat(
         return f"Error: {str(e)}"
 
 
-def reset_chat(session_id: str = "default", use_case: str = "basic_chatbot"):
-    """Reset chat session"""
-    session_key = f"{session_id}::{use_case}"
-    session_store.pop(session_key, None)
-    print(f"✓ Chat session '{session_key}' reset")
+def reset_chat(use_case: str = "basic_chatbot"):
+    """Reset chat conversation"""
+    conversation_store.pop(use_case, None)
+    print(f"✓ Chat conversation '{use_case}' reset")
 
 
 def print_menu():
@@ -171,22 +167,20 @@ def print_menu():
     print("1. Chat (Basic Chatbot)")
     print("2. Chat (MCP Chatbot with Tools)")
     print("3. Change Provider")
-    print("4. Change Session ID")
-    print("5. Reset Session")
-    print("6. List Sessions")
-    print("7. Test All Providers")
-    print("8. Test MCP Tools")
-    print("9. Exit")
+    print("4. Reset Conversation")
+    print("5. Test All Providers")
+    print("6. Test MCP Tools")
+    print("7. Exit")
     print("=" * 60)
 
 
 async def interactive_chat(
-    provider: str = "groq", use_case: str = "basic_chatbot", session_id: str = "default"
+    provider: str = "groq", use_case: str = "basic_chatbot"
 ):
     """Interactive chat loop"""
     print(f"\n{'=' * 60}")
     print(f"Interactive Chat Mode")
-    print(f"Provider: {provider} | Use Case: {use_case} | Session: {session_id}")
+    print(f"Provider: {provider} | Use Case: {use_case}")
     print(f"{'=' * 60}")
     print("Type 'back' to return to menu, 'quit' to exit\n")
 
@@ -201,7 +195,7 @@ async def interactive_chat(
                 continue
 
             print("\nAssistant: ", end="", flush=True)
-            response = await chat(user_input, provider, use_case, session_id)
+            response = await chat(user_input, provider, use_case)
             print(response)
             print()
 
@@ -228,7 +222,6 @@ async def test_all_providers():
                 test_message,
                 provider=provider,
                 use_case="basic_chatbot",
-                session_id=f"test_{provider}",
             )
             print(f"✓ {provider.upper()}: {response[:100]}...")
         except Exception as e:
@@ -261,7 +254,6 @@ async def test_mcp_tools():
         "Use multiply tool to multiply 2 and 3",
         provider="openai",
         use_case="mcp_chatbot",
-        session_id="test_mcp",
     )
     print(f"Response: {response}")
 
@@ -279,19 +271,18 @@ async def main():
     # Default settings
     current_provider = "groq"
     current_use_case = "basic_chatbot"
-    current_session_id = "default"
 
     while True:
         print_menu()
         choice = input("\nEnter your choice: ").strip()
 
         if choice == "1":
-            await interactive_chat(
-                current_provider, "basic_chatbot", current_session_id
-            )
+            current_use_case = "basic_chatbot"
+            await interactive_chat(current_provider, "basic_chatbot")
 
         elif choice == "2":
-            await interactive_chat(current_provider, "mcp_chatbot", current_session_id)
+            current_use_case = "mcp_chatbot"
+            await interactive_chat(current_provider, "mcp_chatbot")
 
         elif choice == "3":
             print("\nAvailable providers:")
@@ -315,32 +306,16 @@ async def main():
                 print("✗ Invalid choice")
 
         elif choice == "4":
-            new_session = input("Enter new session ID: ").strip()
-            if new_session:
-                current_session_id = new_session
-                print(f"✓ Session ID set to: {current_session_id}")
-            else:
-                print("✗ Invalid session ID")
+            reset_chat(current_use_case)
+            print(f"✓ Conversation reset for: {current_use_case}")
 
         elif choice == "5":
-            reset_chat(current_session_id, current_use_case)
-            print(f"✓ Session reset")
-
-        elif choice == "6":
-            print("\nActive Sessions:")
-            if session_store:
-                for key in session_store.keys():
-                    print(f"  - {key} ({len(session_store[key])} messages)")
-            else:
-                print("  No active sessions")
-
-        elif choice == "7":
             await test_all_providers()
 
-        elif choice == "8":
+        elif choice == "6":
             await test_mcp_tools()
 
-        elif choice == "9":
+        elif choice == "7":
             print("\nGoodbye!")
             break
 
